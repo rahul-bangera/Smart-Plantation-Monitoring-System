@@ -1,0 +1,159 @@
+#define BLYNK_PRINT Serial   
+#include <SPI.h>
+#include <ESP8266WiFi.h>
+#include <BlynkSimpleEsp8266.h>
+#include <SimpleTimer.h>
+#include <DHT.h>
+#define BLYNK_PRINT Serial
+#include <OneWire.h>
+#include <DallasTemperature.h>
+#define ONE_WIRE_BUS D2    // Define to which pin of the Arduino the 1-Wire bus is connected
+
+// Create a new instance of the oneWire class to communicate with any OneWire sensor
+OneWire oneWire(ONE_WIRE_BUS);
+
+
+// Pass the oneWire reference to DallasTemperature library:
+DallasTemperature sensors(&oneWire);
+
+char auth[] = "----------------";               //Authentication code sent by Blynk
+char ssid[] = "-------";                        //WiFi SSID
+char pass[] = "-------";                        //WiFi Password
+
+#define pirPin D1            
+int pirValue;                   
+int pinValue;                   
+
+#define sensorPin D6 
+#define rainPin D5
+int sensorState = 0;
+int rainState = 0;
+int lastState = 0;
+int lastRainState = 0;
+#define DHTPIN 2    
+#define DHTTYPE DHT11     
+DHT dht(DHTPIN, DHTTYPE);
+SimpleTimer timer;
+
+BLYNK_WRITE(V0)
+{
+ pinValue = param.asInt();    
+} 
+
+void sendSensor()
+{
+  float h = dht.readHumidity();
+  float t = dht.readTemperature();
+
+  if (isnan(h) || isnan(t)) {
+    Serial.println("Failed to read from DHT sensor!");
+    return;
+  }
+ 
+  Blynk.virtualWrite(V5, h);  //V5 is for Humidity
+  Blynk.virtualWrite(V6, t);  //V6 is for Temperature
+}
+
+void setup()
+{
+// Begin serial communication at a baud rate of 9600
+  Serial.begin(9600);
+  Blynk.begin(auth, ssid, pass);
+   pinMode(sensorPin, INPUT);
+   pinMode(rainPin, INPUT);
+   pinMode(pirPin, INPUT);
+  dht.begin();
+
+//Setup a function to be called every 1 seconds
+  timer.setInterval(1000L, sendSensor);
+  Serial.begin(115200);    // 115200 is the serial port baud rate
+    // remember to select the same baud rate in the serial monitor
+  Blynk.begin(auth, ssid, pass);
+   sensors.begin();
+}
+
+int sensor=0;
+void sendTemps()
+{
+sensor=analogRead(A0);
+sensors.requestTemperatures();  // Send the command for all devices on the bus to perform a temperature conversion
+
+// Fetch the temperature in degrees Celsius for device index:
+float temp = sensors.getTempCByIndex(0); // the index 0 refers to the first device
+
+Serial.println(temp);
+Serial.println(sensor);
+Blynk.virtualWrite(V1, temp);
+Blynk.virtualWrite(V2,sensor);
+
+// Wait 1 second:
+delay(1000);
+}
+
+void getPirValue(void)        //Get PIR Data
+  {
+   pirValue = digitalRead(pirPin);
+    if (pirValue) 
+     { 
+       Serial.println("Motion detected");
+       Blynk.notify("Motion detected");  
+     }
+  }
+  
+void loop()
+{
+  Blynk.run(); 
+  timer.run(); 
+  sendTemps();
+sensorState = digitalRead(sensorPin);
+Serial.println(sensorState);
+
+if (sensorState == 1 && lastState == 0) {
+  Serial.println("needs water, send notification");
+  Blynk.notify("Water your plants");
+  lastState = 1;
+  delay(1000);
+//send notification
+    
+  } 
+  else if (sensorState == 1 && lastState == 1) {
+    //do nothing, has not been watered yet
+  Serial.println("has not been watered yet");
+  delay(1000);
+  }
+  else {
+    
+    Serial.println("does not need water");
+    lastState = 0;
+    delay(1000);
+  }
+
+
+rainState = digitalRead(rainPin);
+Serial.println(rainState);
+
+  if (rainState == 0 && lastRainState == 0) {
+  Serial.println("Its Raining!");
+  Blynk.notify("Its Raining!");
+  lastRainState = 1;
+  delay(1000);
+//send notification
+    
+  } 
+  else if (rainState == 0 && lastRainState == 1) {
+  delay(1000);
+  }
+  else {
+    Serial.println("No Rains");
+    lastRainState = 0;
+    delay(1000);
+  }
+
+
+  if (pinValue == HIGH)    
+      {
+        getPirValue();
+      }
+      Blynk.run();
+  delay(100);
+}
